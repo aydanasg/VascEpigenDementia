@@ -13,7 +13,7 @@
 module load anaconda3/personal
 source activate ldsc
 
-#making folders ]
+#making folders
 echo "Making directories"
 mkdir -p ~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/ldsc/annot_file
 mkdir -p ~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/ldsc/heritability
@@ -50,7 +50,7 @@ for name in "${cell[@]}"; do
     echo "$name"
 done
 
-## Step 1: Creating an annot file 
+## Step 1: Creating an annotation file for each cell type using 1) functional annotations in .bed format; and 2) bim file from 1000 Genome Phase 3 reference for european population 
 
 for cell_type in "${cell[@]}"
 do
@@ -66,7 +66,7 @@ done
 done
 
 
-## Step 2: Generating ldsc scores 
+## Step 2: Generating ldsc scores files for each type using 1) PLINK files for 1000 Genome Phase 3 reference for european population; 2) anotation files for each functional annotation in .annot.gz format; and 3) retaining only HapMap3 SNPs in linst.txt
 
 for cell_type in "${cell[@]}"
 do
