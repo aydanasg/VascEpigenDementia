@@ -2,10 +2,10 @@
 
 #
 #PBS -N ldsc_step12_ADvas_AAA_20240422_hg19
-#PBS -o ldsc_step12__ADvas_AAA_20240422_hg19.log
+#PBS -o ldsc_step12__ADvas_AAA_2024422_hg19
 
 #PBS -l walltime=72:00:00
-#PBS -l select=1:ncpus=5:mem=100gb
+#PBS -l select=1:ncpus=20:mem=400gb
 
 ## Create conda env (DO THIS STEP BEFORE ATTEMPTING TO RUN LDSC) 
 #conda env create --file environment.yml
@@ -13,27 +13,81 @@
 module load anaconda3/personal
 source activate ldsc
 
+#making folders ]
+echo "Making directories"
+mkdir -p ~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/ldsc/annot_file
+mkdir -p ~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/ldsc/heritability
+
 #paths to the directories 
 echo "Creating paths to directories"
+ID=ADvas_AAA_20240422_hg19
+
 LDSC="/rds/general/user/aa19618/projects/epinott/live/scripts/ldsc/ldsc"
 REQUIRED_FILES="/rds/general/user/aa19618/projects/epinott/live/scripts/ldsc/required_files"
 ANNOT_FILES="/rds/general/user/aa19618/projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/ldsc/annot_file"
 #Change the path in HERITABILITY_OUTPUT to the directory where your results will be stored 
 HERITABILITY_OUTPUT="/rds/general/user/aa19618/projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/ldsc/heritability"
 # Directory where the files are located
-BEDFILES="/rds/general/user/aa19618/projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/nextflow_ct/analysed_data/${ID}/bedfiles/filtered_peaks"
-CHAIN="/rds/general/user/aa19618/projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/ldsc/hg38ToHg19.over.chain.gz"
+BEDFILES="/rds/general/user/aa19618/projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/ldsc/bedfiles/${ID}/all"
+
+#Creating an array for sample_type and cell_type
+echo "Creating an array for cell_type"
+
+#An array for cell names 
+cell=()
+
+# Iterate through files in the specified directory
+for file in "$BEDFILES/"*.bed; do
+    if [ -e "$file" ]; then
+        # Extract the base filename without the path and the trailing ".bed" pattern
+        filename=$(basename "$file")
+        cell+=("${filename%.bed}")
+    fi
+done
+
+# Print the new array
+for name in "${cell[@]}"; do
+    echo "$name"
+done
+
+## Step 1: Creating an annot file 
+
+for cell_type in "${cell[@]}"
+do
+    for chrom in {1..22}
+    do
+      echo "Creating an annot file for: ${cell_type} and chr ${chrom}"
+## Step 1: Creating an annot file
+  python ${LDSC}/make_annot.py \
+  --bed-file ${BEDFILES}/${cell_type}.bed \
+  --bimfile ${REQUIRED_FILES}/1000G_EUR_Phase3_plink/1000G.EUR.QC.${chrom}.bim \
+  --annot-file ${ANNOT_FILES}/${cell_type}.${chrom}.annot.gz
+done
+done
+
+
+## Step 2: Generating ldsc scores 
+
+for cell_type in "${cell[@]}"
+do
+    for chrom in {1..22}
+    do 
+      echo "Generating ldsc scores for: ${cell_type} and chr ${chrom}"
+python ${LDSC}/ldsc.py \
+  --l2 \
+  --bfile ${REQUIRED_FILES}/1000G_EUR_Phase3_plink/1000G.EUR.QC.${chrom} \
+  --ld-wind-cm 1 \
+  --annot ${ANNOT_FILES}/${cell_type}.${chrom}.annot.gz  \
+  --thin-annot \
+  --out ${ANNOT_FILES}/${cell_type}.${chrom} \
+  --print-snps ${REQUIRED_FILES}/list.txt 
+done
+done
 
 ## Step 3: Running ldsc - disease enrichment  analysis 
 
-#list your cell types for analysis EG:
-#only names of cells should match their names in the filenames 
-#list of diseases, only keep the disease you are interested in (select from the list below)
-
 DISEASE="/rds/general/user/aa19618/projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/gwas_studies/ldsc_files/sumstats_ldsc"
 export disease=("AD_Jansen2019" "AD_Kunkle2019" "PD_Nalls2019_proxy" "MS_Andlauer2016" "ALS_Rheenen2021" "SCZ_Trubetskoy2022" "CAD_Aragam2022" "AF_Nielsen2018" "DBP_Evangelou2018" "SBP_Evangelou2018" "Stroke_Malik2018" "Stroke_Mishra2022" "Longevity_Deelan2019_90th" "SVD_Sargurupremraj2022" "PVS_Duperron2023" "Covid_Castineira2023")
-
-#For acetylaytion ADvas_AAA_20240422_ac
 
 ID=ADvas_AAA_20240422_ac_hg19
 
