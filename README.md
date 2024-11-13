@@ -10,7 +10,7 @@ Kevin Chris Ziegler¹²⁸, Aydan Askarova¹²⁸, Charbel Gergian¹², Reuben M
 4  Institute of Biochemistry, Friedrich-Alexander-University Erlangen-Nuremberg, Fahrstrasse 17, 91054 Erlangen, Germany.<br /> 
 5 Department of Neurosurgery, University of California, San Diego–Rady Children’s Hospital, San Diego, CA 92123, USA.<br /> 
 6 Department of Pediatrics, University of California, San Diego, La Jolla, CA 92093, USA.<br /> 
-7 Sanford Consortium for Regenerative Medicine, La Jolla, CA 92037, USA.
+7 Sanford Consortium for Regenerative Medicine, La Jolla, CA 92037, USA.<br /> 
 8 These authors contributed equally 
  
 *Correspondence: a.nott@imperial.ac.uk 
