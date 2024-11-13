@@ -6,13 +6,13 @@ The brain neurovascular epigenome and its association with dementia
  
 Kevin Chris Ziegler1,2,8, Aydan Askarova1,2,8, Charbel Gergian1,2, Reuben M. Yaa1,2, Janis Lisa Transfeld1,2, Janna D. van Dalen1,2, Jia Du1,2,3, Daniel Clode1,2, Fatemeh Rahbar1,2, Filippo Zoppi4, David D. Gonda5, Michael L. Levy5, Sven Falk4, Marisa Karow4, Paul M. Matthews1,2, Nicole G. Coufal6,7, Alexi Nott*1,2 
  
-1 UK Dementia Research Institute, Imperial College London, London, UK. 
-2 Department of Brain Sciences, Imperial College London, London, UK. 
-3 Department of Immunology, University of Toronto, Toronto, ON, Canada. 
-4  Institute of Biochemistry, Friedrich-Alexander-University Erlangen-Nuremberg, Fahrstrasse 17, 91054 Erlangen, Germany. 
-5 Department of Neurosurgery, University of California, San Diego–Rady Children’s Hospital, San Diego, CA 92123, USA. 
-6 Department of Pediatrics, University of California, San Diego, La Jolla, CA 92093, USA. 
-7 Sanford Consortium for Regenerative Medicine, La Jolla, CA 92037, USA.
+1 UK Dementia Research Institute, Imperial College London, London, UK.<br />
+2 Department of Brain Sciences, Imperial College London, London, UK.<br />
+3 Department of Immunology, University of Toronto, Toronto, ON, Canada.<br /> 
+4  Institute of Biochemistry, Friedrich-Alexander-University Erlangen-Nuremberg, Fahrstrasse 17, 91054 Erlangen, Germany.<br /> 
+5 Department of Neurosurgery, University of California, San Diego–Rady Children’s Hospital, San Diego, CA 92123, USA.<br /> 
+6 Department of Pediatrics, University of California, San Diego, La Jolla, CA 92093, USA.<br /> 
+7 Sanford Consortium for Regenerative Medicine, La Jolla, CA 92037, USA.<br />
 8 These authors contributed equally 
  
 *Correspondence: a.nott@imperial.ac.uk 
