@@ -1,0 +1,247 @@
+---
+title: "camera"
+author: "Aydan Askarova"
+date: "05/06/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(Rsubread) #featureCounts 
+library(edgeR)
+library(statmod)
+library(GenomicRanges)
+library(readxl)
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggrepel)
+library(RColorBrewer)
+library(pheatmap)
+library(ChIPseeker)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(org.Hs.eg.db)
+library(data.table)
+library(tidyverse)
+library(readxl)
+```
+
+
+```{r}
+ID<-"ADvas_AAA_20240422_hg19"
+
+#Carrying out diff analysis using EdgeR
+load(file = paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/diff_analysis/featureCounts/", ID, "_promoters.breaking_peaks..afterQC.inVivo.inVitro.all.featureCounts.rda")) #featureCounts
+
+matrix_ext<-cbind(featureCounts$annotation, featureCounts$counts)
+
+
+#reading in the data
+counts<-as.data.frame(featureCounts$counts)
+
+# Define the patterns to remove
+pattern<-paste0(c("unique_", "22_04_2024_", ".sorted.bam", "_resected"), collapse = "|")
+
+# Use gsub to remove the unwanted patterns
+colnames(counts)<-gsub(pattern = pattern, replacement = "", x = colnames(counts))
+
+identifiers_only <- sapply(strsplit(colnames(counts), "_R"), function(x) x[1])
+
+#creating a DGEList object
+dgList<-DGEList(counts = counts, samples = colnames(counts), genes = rownames(counts), group = identifiers_only)
+  
+# design matrix
+design <- model.matrix(~ 0 + group, data = dgList$samples)
+colnames(design)<-gsub(pattern = "group", replacement = "", x = colnames(design))
+
+
+#filtering 
+countsPerMillion<-cpm(dgList)
+countCheck<-countsPerMillion > 1
+keep<-which(rowSums(countCheck) >= 2)
+dgList<-dgList[keep,]
+
+#normalisation - TMM normalization is performed to eliminate composition biases between libraries
+dgList<- calcNormFactors(dgList, method = "TMM")
+dgList<-estimateDisp(dgList, design, robust = TRUE)
+dgList$common.dispersion
+
+scaled_counts <- cpm(dgList, normalized.lib.sizes = TRUE) 
+
+fit <-glmQLFit(y = dgList, design = design, robust = TRUE)
+
+
+contrasts <- makeContrasts("endo_ipsc_acVSall"= endo_ipsc_ac - (olig2+neun+rfx4+pu1+peri_ipsc_ac)/5, 
+                           "peri_ipsc_acVSall"= peri_ipsc_ac - (olig2+neun+rfx4+pu1+endo_ipsc_ac)/5, 
+                           "peri_prim_acVSall"= peri_prim_ac - (olig2+neun+rfx4+erg+pu1)/5,
+                           "pu1VSall"= pu1 - (olig2+neun+rfx4+erg+notch3)/5,
+                           "olig2VSall"= olig2 - (pu1+neun+rfx4+erg+notch3)/5,
+                           "neunVSall"= neun - (olig2+pu1+rfx4+erg+notch3)/5,
+                           "rfx4VSall"= rfx4 - (olig2+neun+pu1+erg+notch3)/5,
+                           "ergVSall" = erg - (olig2+neun+rfx4+pu1+notch3)/5,
+                           "notch3VSall" = notch3 - (olig2+neun+rfx4+erg+pu1)/5,
+                           "pu1"= pu1,
+                           "olig2"= olig2,
+                           "neun"= neun,
+                           "rfx4"= rfx4,
+                           "erg" = erg,
+                           "notch3" = notch3,
+                           levels=design)
+
+
+```
+
+##Annotating peaks to gene matrix 
+```{r}
+peak_coord<-matrix_ext[,1:4]
+peak_coord_gr<-GRanges(seqnames = peak_coord$Chr, ranges = IRanges(start = peak_coord$Start, end = peak_coord$End), GeneID=peak_coord$GeneID)
+
+gene_peak_coord<-annotatePeak(peak = peak_coord_gr, tssRegion = c(-2000,500), TxDb = TxDb.Hsapiens.UCSC.hg19.knownGene, annoDb = "org.Hs.eg.db")
+gene_peak_coord<-as.data.frame(gene_peak_coord@anno)
+gene_peak_coord<- gene_peak_coord[grepl(pattern = "Promoter", x = gene_peak_coord$annotation), ]
+gene_peak_coord<-gene_peak_coord[,c(6,17)]
+
+scaled_counts_genes<-merge(x = scaled_counts, y = gene_peak_coord, by.x="row.names", by.y="GeneID")
+scaled_counts_genes<-scaled_counts_genes[,2:29]
+
+scaled_counts_genes <- scaled_counts_genes %>%
+  group_by(SYMBOL) %>%
+  summarize(across(everything(), sum, na.rm = TRUE))
+
+scaled_counts_genes<-as.data.frame(scaled_counts_genes)
+scaled_counts_genes<-na.omit(scaled_counts_genes)
+
+rownames(scaled_counts_genes)<-scaled_counts_genes$SYMBOL
+scaled_counts_genes<-scaled_counts_genes[,-1]
+
+fwrite(x = scaled_counts_genes, file = "~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/diff_analysis/featureCounts/_promoters.breaking_peaks.afterQC.genes.normalised.featureCounts.rda", sep = "\t")
+```
+##CONTRASTS
+```{r}
+cell_contrasts<-c("pu1VSall", "olig2VSall", "neunVSall", "rfx4VSall", "ergVSall", "notch3VSall", "endo_ipsc_acVSall", "peri_ipsc_acVSall", "peri_prim_acVSall")
+cell_contrasts_names<-c("PU1"="pu1VSall", "OLIG2"= "olig2VSall", "NEUN"="neunVSall", "RFX4"="rfx4VSall", "ERG"="ergVSall", "NOTCH3"="notch3VSall", "iPSC BEC"="endo_ipsc_acVSall", "iPSC PERICYTES"="peri_ipsc_acVSall", "Primary PERICYTES" = "peri_prim_acVSall") 
+
+```
+
+##Markers genes TSARTSALIS
+```{r}
+sc_cells<-c("markers microglia", "markers EC", "markers SMC", "markers PC",  "markers astrocytes", "markers neurons", "markers oligodendrocytes")
+sc_renames<-c("markers EC" = "BEC", "markers PC" = "PERICYTES", "markers SMC" = "SMC", "markers microglia"="MICROGLIA", "markers astrocytes"="ASTROCYTES", "markers neurons"="NEURONS", "markers oligodendrocytes"= "OLIGODENDROCYTES" )
+
+gene_ensg<-fread(input = "~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/magma/required_files/annotated_genes_TxDb.Hsapiens.UCSC.hg19.knownGene.names.org.Hs.eg.db.txt")
+gene_list<-list()
+
+for(c in 1:length(sc_cells)){
+
+genes<-as.data.frame(read_excel(path = "~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/sc_tsartsalis/data/41467_2024_46630_MOESM4_ESM.xlsx", sheet = paste0(sc_cells[c]), skip = 2, col_names = T))
+genes<-genes %>% filter(genes$avg_logFC >0.5)
+
+colnames(genes)<-c("gene_symbol", "p_val", "avg_logFC", "pct.1", "pct.2", "p_val_adj")
+
+genes<-merge(x = genes, y = gene_ensg, by.x="gene_symbol", by.y="SYMBOL")
+names<-list(genes$gene_symbol)
+names(names)<-paste0(sc_renames[[sc_cells[c]]])
+gene_list<-c(gene_list, names)
+}
+```
+
+
+```{r}
+camera_all<-c()
+for(c in 1:length(cell_contrasts)){
+camera<-camera(y=scaled_counts_genes, index=gene_list, design=design, contrast = contrasts[, paste0(cell_contrasts[c])])
+camera<-camera[c("MICROGLIA", "BEC", "SMC", "PERICYTES", "ASTROCYTES", "NEURONS", "OLIGODENDROCYTES"),]
+camera$contrast<- paste0(names(cell_contrasts_names)[c])
+camera$FDR<- -log10(camera$FDR)
+camera$FDR <- ifelse(camera$FDR > 10, 10, camera$FDR)
+camera$FDR <- ifelse(camera$Direction == "Down", -camera$FDR, camera$FDR)
+camera$sc_annotation<-rownames(camera)
+camera_all<-rbind(camera_all, camera)
+tsartsalis<-camera_all
+}
+
+pattern<-paste(c("PU1", "ERG", "NOTCH3", "RFX4", "NEUN", "OLIG2", "BEC", "PERICYTES"), collapse = "|")
+tsartsalis$condition<-gsub(pattern = pattern, replacement = "", tsartsalis$contrast)
+tsartsalis$contrast<-factor(x = tsartsalis$contrast, levels = c("Primary PERICYTES", "iPSC PERICYTES", "iPSC BEC", "OLIG2", "NEUN", "RFX4", "NOTCH3", "ERG", "PU1"))
+tsartsalis$sc_annotation<-factor(x = tsartsalis$sc_annotation, levels = c("OLIGODENDROCYTES", "NEURONS", "ASTROCYTES", "PERICYTES", "SMC", "BEC", "MICROGLIA"))
+```
+##Markers genes YANG
+
+```{r}
+gene_ensg<-fread(input = "~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/magma/required_files/annotated_genes_TxDb.Hsapiens.UCSC.hg19.knownGene.names.org.Hs.eg.db.txt")
+gene_list<-list()
+
+for(c in 1:length(sc_cells)){
+
+genes<-as.data.frame(read_excel(path = "~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/sc_yang/data/NIHMS1840921-supplement-TWC_Table_2.xlsx", sheet = "Sheet1", col_names = T))
+genes<-genes %>% filter(genes$avg_logFC > 0.5)
+colnames(genes)<-c("gene_symbol", "p_val", "avg_logFC", "pct.1", "pct.2", "p_val_adj", "cell_type")
+genes_split<-split(x = genes, f =genes$cell_type)
+names(genes_split)<-gsub(pattern = " ", replacement = "", x = names(genes_split))
+names(genes_split)<-gsub(pattern = ",", replacement = "&", x = names(genes_split))
+}
+genes_split<-lapply(genes_split, function(list) {
+
+list<-list$gene_symbol
+return(list)
+
+})
+
+```
+
+```{r}
+
+camera_all<-c()
+for(c in 1:length(cell_contrasts)){
+camera<-camera(y=scaled_counts_genes, index=genes_split, design=design, contrast = contrasts[, paste0(cell_contrasts[c])])
+camera$contrast<- paste0(names(cell_contrasts_names)[c])
+camera$FDR<- -log10(camera$FDR)
+camera$FDR <- ifelse(camera$FDR > 5, 5, camera$FDR)
+camera$FDR <- ifelse(camera$Direction == "Down", -camera$FDR, camera$FDR)
+camera<-camera[c("Macrophage/Microglia", "Tcell", "BEC&Arterial", "BEC&Venous", "BEC&Capillary", "MeningealFibroblast", "PerivascularFibroblast", "Ependymal", "SMC", "Pericyte", "Astrocyte", "Neuron", "Oligo", "OPC"),]
+rownames(camera)<-c("MACROPHAGE/MICROGLIA", "T CELL", "ARTERIAL BEC", "VENOUS BEC", "CAPILLARY BEC", "MENINGEAL FIBROBLAST", "PERIVASCULAR FIBROBLAST", "EPENDYMAL", "SMC", "PERICYTE", "ASTROCYTE", "NEURON", "OLIGODENDROCYTES", "OPC")
+camera$sc_annotation<-rownames(camera)
+camera_all<-rbind(camera_all, camera)
+yang<-camera_all
+}
+
+pattern<-paste(c("PU1", "ERG", "NOTCH3", "RFX4", "NEUN", "OLIG2", "BEC", "PERICYTES"), collapse = "|")
+yang$condition<-gsub(pattern = pattern, replacement = "", yang$contrast)
+yang$contrast<-factor(x = yang$contrast, levels = c("Primary PERICYTES", "iPSC PERICYTES", "iPSC BEC", "OLIG2", "NEUN", "RFX4", "NOTCH3", "ERG", "PU1"))
+yang$sc_annotation<-factor(x = yang$sc_annotation, levels = c("OPC", "OLIGODENDROCYTES", "NEURON", "ASTROCYTE", "PERICYTE","SMC","EPENDYMAL","PERIVASCULAR FIBROBLAST","MENINGEAL FIBROBLAST","CAPILLARY BEC","VENOUS BEC","ARTERIAL BEC","T CELL","MACROPHAGE/MICROGLIA"))
+
+```
+
+```{r}
+sc_paper<-c("tsartsalis")
+# Create the plot
+
+
+for(s in 1:length(sc_paper)){
+  author<-get(sc_paper[s])
+  
+  author$condition_name <- ifelse(author$condition=="", "inVivo Promoters", "inVitro promoters")
+  author$condition_name<-factor(x = author$condition_name, levels = c("inVivo Promoters", "inVitro promoters"))
+
+ggplot(author, aes(x = FDR, y = sc_annotation, fill = contrast)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  theme_minimal() +
+  geom_vline(xintercept = c(-1.3, 1.3), linetype = "dashed", color = "darkgrey") +
+  theme(
+    axis.text.y = element_text(size = 9),
+    axis.text.x = element_text(size = 7),
+    strip.text = element_text(size = 10, face = "bold"),
+    axis.title.x = element_text(size = 11), # Increase x-axis title size
+    axis.title.y = element_text(size = 11) 
+  ) +
+  labs(fill = "Cell Type") +
+   scale_fill_manual(values = c("PU1" = "#BC3934", "ERG"="#785594", "NOTCH3"="#5F2828", "OLIG2"="#0072B2", "RFX4"="#E69F00", "NEUN"="#009E73", "iPSC BEC"="#E852C1", "iPSC PERICYTES"="#927D04", "Primary PERICYTES" = "#7D626C")) +
+  facet_wrap(~condition_name) +
+  xlab(label = "Expression of Differentially Acetylated Peaks (log10(FDR))") +
+  ylab(label = "scRNA-seq cell types")
+
+ggsave(filename = paste0(ID, ".promoters.breaking_peaks.afterQC.inVivo.inVitro.all.", sc_paper[s] ,"_deg.avg_logF0.5.camera.pdf"), plot = last_plot(), device = "pdf", path = paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/sc_tsartsalis/graphs/"),  width = 25, height =20, units = "cm")
+}
+
+```
+

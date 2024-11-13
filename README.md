@@ -1,10 +1,10 @@
 # VascEpigenDementia
 
-### ***Title***: **Genetic Links Between Alzheimer's Disease and Cerebral Small-Vessel Disease: A Cell-Specific Regulatory Atlas**
+### ***Title***: **The brain neurovascular epigenome and its association with dementia**
 
-The brain neurovascular epigenome and its association with dementia 
-
-Kevin Chris Ziegler<1><,><2><,><8>, Aydan Askarova1,2,8, Charbel Gergian1,2, Reuben M. Yaa1,2, Janis Lisa Transfeld1,2, Janna D. van Dalen1,2, Jia Du1,2,3, Daniel Clode1,2, Fatemeh Rahbar1,2, Filippo Zoppi4, David D. Gonda5, Michael L. Levy5, Sven Falk4, Marisa Karow4, Paul M. Matthews1,2, Nicole G. Coufal6,7, Alexi Nott*1,2 
+![alt text](image.png)
+ 
+Kevin Chris Ziegler1,2,8, Aydan Askarova1,2,8, Charbel Gergian1,2, Reuben M. Yaa1,2, Janis Lisa Transfeld1,2, Janna D. van Dalen1,2, Jia Du1,2,3, Daniel Clode1,2, Fatemeh Rahbar1,2, Filippo Zoppi4, David D. Gonda5, Michael L. Levy5, Sven Falk4, Marisa Karow4, Paul M. Matthews1,2, Nicole G. Coufal6,7, Alexi Nott*1,2 
  
 1 UK Dementia Research Institute, Imperial College London, London, UK.<br />
 2 Department of Brain Sciences, Imperial College London, London, UK.<br />

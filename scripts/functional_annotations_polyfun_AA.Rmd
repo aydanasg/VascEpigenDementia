@@ -1,0 +1,106 @@
+---
+title: "functional_annotations_polyfun"
+author: "Aydan Askarova"
+date: "13/11/2024"
+output: html_document
+---
+
+#loading "seurat" environment 
+```{r setup, include=FALSE}
+library(data.table)
+library(arrow)
+library(GenomicRanges)
+library(dplyr)
+library(ChIPseeker)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(org.Hs.eg.db)
+library(openxlsx)
+```
+
+#making sure that the 0s dont switch to +0 as these are read as characters in many tools including polyfun, ldsc
+```{r}
+options(scipen = 999)
+```
+
+#Functional annotations
+##Uploading bed files
+```{r}
+#Reading a .bed file (consensus peak file)
+ID=c("ADvas_AAA_20240422_ac_hg19", "ADvas_AAA_20240422_tf_hg19")
+#loading paths
+peak_paths<-list.files(path = paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/nextflow_ct/analysed_data/", ID, "/bedfiles/filtered_peaks_afterQC/"), pattern = ".bed", all.files = TRUE, full.names = TRUE)
+names<-list.files(path = paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/nextflow_ct/analysed_data/", ID, "/bedfiles/filtered_peaks_afterQC/"), pattern = ".bed", all.files = TRUE, full.names = FALSE)
+
+pattern<-c("/rds/general/user/aa19618/home/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/nextflow_ct/analysed_data/ADvas_AAA_20240422_tf_hg19/bedfiles/filtered_peaks_afterQC//", "/rds/general/user/aa19618/home/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/nextflow_ct/analysed_data/ADvas_AAA_20240422_ac_hg19/bedfiles/filtered_peaks_afterQC//", "_ADvas_AAA_20240422", ".bed")
+pattern<-paste(pattern, collapse = "|")
+
+names<-gsub(pattern = pattern, replacement = "", x = names)
+#reading .bed files into one list
+peaks<-sapply(peak_paths, fread, simplify = FALSE)
+names(peaks)<-gsub(pattern = pattern, replacement = "", x = names(peaks))
+  
+peaks<-lapply(peaks, function(df){
+  df<-unique(df)
+  return(df)
+})
+
+```
+
+##uploading gwas studies 
+```{r}
+
+type<-c("AD_Jansen2019_munged.polyfun.parquet", "SVD_Sargurupremraj2022_munged.polyfun.parquet")
+
+disease<-read_parquet(file = paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/gwas_studies/polyfun_files/", type[t]))
+disease$CHR<-paste0("chr", disease$CHR)
+disease<-disease[,c("SNP", "CHR", "BP", "A1", "A2")]
+disease_gr<-GRanges(seqnames = disease$CHR, ranges = IRanges(start = disease$BP, end = disease$BP), SNP=disease$SNP, CHR=disease$CHR, BP=disease$BP, A1=disease$A1, A2=disease$A2)
+
+```
+
+##overlapping beds with gwas snps
+```{r} 
+for(p in 1:length(peaks)){
+  gr<-peaks[[p]]
+  gr<-GRanges(seqnames = gr$V1, ranges = IRanges(start = gr$V2, end = gr$V3))
+  # Find overlaps between peask and snps
+  olap <- findOverlaps(query = gr, subject = disease_gr)
+  # Identify genomic coordinates unique to A
+  olapcoord_AD <- disease_gr[subjectHits(olap)];
+  mcols(olapcoord_AD) <- cbind(mcols(gr[queryHits(olap)]), mcols(disease_gr[subjectHits(olap)]))
+  olapcoord_AD<-unique(as.data.frame(olapcoord_AD))
+  olapcoord_AD<-olapcoord_AD[,c("SNP", "CHR", "BP", "A1", "A2")]
+  assign(paste0(names(peaks[p]), ".snps"), olapcoord_AD)
+} 
+
+```
+
+##creating annotations for polyfun 
+```{r}
+# Add the new column to datasetA
+# Perform the merge
+peaks<-c("erg_ac_hg19", "neun_ac_hg19", "notch3_ac_hg19", "olig2_ac_hg19", "pu1_ac_hg19", "rfx4_ac_hg19", "erg_tf_hg19","olig2_tf_hg19","pu1_tf_hg19")
+
+for(p in 1:length(peaks)){
+cell_type<-get(paste0(peaks[p], ".snps"))
+disease$cell_type <- ifelse(!is.na(match(disease$SNP, cell_type$SNP)), 1, 0)
+disease<-setnames(disease, old = "cell_type", new = paste0(peaks[p]))
+}
+
+disease$CHR<-gsub(pattern = "chr", replacement = "", x = disease$CHR)
+disease$CHR<-as.numeric(disease$CHR)
+disease_split<-split(x = disease, f = disease$CHR)
+
+for(n in 1:22){
+  chr_number<-disease_split[[n]]
+  #1. An annotations file containing columns for CHR, BP, SNP, A1, A2 and arbitrary other columns representing your annotations. These files can be either .parquet or .gz files (we recommend using .parquet files).
+  chr_number[is.na(chr_number)] <- 0
+  sapply(chr_number, typeof)
+  write_parquet(x = chr_number, sink = paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/polyfun/annot_files/", type[t], names(disease_split[n]), ".annot.parquet"))
+  
+  #2. An file with extension .l2.M containing a single line with the sums of the columns of each annotation (whitespace-delimited).
+  sum<-colSums(chr_number[,-c(1:5)])
+  sum <- data.frame(t(sum))  # Transpose to get sums in rows
+  fwrite(x = sum, file = paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/polyfun/annot_files/", type[t], names(disease_split[n]), ".l2.M"), sep = "\t", row.names = F, col.names = F, quote = F)
+}
+```
