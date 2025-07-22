@@ -1,4 +1,5 @@
 import sys
+import random
 from Bio import SeqIO
 import numpy as np
 import pandas as pd
@@ -14,10 +15,11 @@ import shap
 
 np.random.seed(23)
 
+#Load csv file created from preprocessing and any extra training samples
 df = pd.read_csv('preproc_df.csv')
 extradf=pd.read_csv('extraPeaks_df.csv')
-
 df = pd.concat([df,extradf])
+
 df['seq']=df['seq'].str.upper()
 
 def train_valid_test_split(dat, valid_frac=0.2, test_frac=0.2,tol=0.1):
@@ -61,8 +63,10 @@ def train_valid_test_split(dat, valid_frac=0.2, test_frac=0.2,tol=0.1):
     return({"train":train_chr,"valid":valid_chr,"test":test_chr},
            {"train":train_act,"valid":valid_act,"test":test_act}
            )
-import random
+
 random.seed(23)
+
+#Train test split
 split_dic=train_valid_test_split(df)[0]
 
 trainset=df[df['chr'].isin(split_dic['train'])]
@@ -73,12 +77,13 @@ X_train,Y_train=trainset['seq'],trainset.iloc[:,2:3]
 X_test,Y_test=testset['seq'],testset.iloc[:,2:3]
 X_valid,Y_valid=validset['seq'],validset.iloc[:,2:3]
 
-from sklearn.preprocessing import MinMaxScaler
+#Normalize scores
 scaler = MinMaxScaler()
 Y_train=scaler.fit_transform(Y_train)
 Y_test=scaler.transform(Y_test)
 Y_valid=scaler.transform(Y_valid)
 
+#One-hot encoding of nucleotides
 nucleotide_dict = {'A': [1, 0, 0, 0],
                    'C': [0, 1, 0, 0],
                    'G': [0, 0, 1, 0],
@@ -86,13 +91,13 @@ nucleotide_dict = {'A': [1, 0, 0, 0],
                    'N': [0, 0, 0, 0]}
 def one_hot_encode(seq):
     return np.array([nucleotide_dict[nuc] for nuc in seq])
-
 X_train=np.array(X_train.apply(one_hot_encode).tolist())
 X_test=np.array(X_test.apply(one_hot_encode).tolist())
 X_valid=np.array(X_valid.apply(one_hot_encode).tolist())
 
 tf.random.set_seed(24)
 
+#Parameters of model
 params= {'batch_size': 32, # number of examples per batch
                       'epochs': 100, # number of epochs
                       'early_stop': 20, # patience to reduce training time; you can increase the patience to see if the model improves after more epochs
@@ -110,6 +115,7 @@ params= {'batch_size': 32, # number of examples per batch
                       'dropout_prob': 0.4, # dropout probability
                       'pad':'same'}
 
+#Create model
 model = Sequential()
 model.add(kl.Conv1D(params['num_filters1'], kernel_size=params['kernel_size1'],padding=params['pad'],activation='relu',name='Conv1D_1',input_shape=(251, 4)))
 model.add(BatchNormalization())
