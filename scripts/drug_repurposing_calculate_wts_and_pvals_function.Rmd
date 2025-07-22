@@ -1,0 +1,232 @@
+---
+title: "explore_cns_cp"
+output: pdf_document
+date: "2022-12-15"
+---
+
+```{r}
+
+library(data.table)
+library(cmapR)
+library(limma)
+library(dplyr)
+library(stringr)
+
+
+```
+# define functions
+```{r}
+threshold <- function(x, minval, maxval) {
+  # threshold a vector using the minval and maxval supplied
+  x[x < minval] <- minval
+  x[x > maxval] <- maxval
+  return(x)
+}
+
+#function to get weights (weight of each replicate based on correlation to other replicates) and calculate moderated zscores for all genes per drug treatment in cell lines of interest
+distil <- function(m, g, dimension="col", method="spearman") {
+  if (!is.numeric(m)) {
+    stop("m must be numeric")
+  }
+  if (!(dimension %in% c("row", "col"))) {
+    stop("dimension must be either row or col")
+  }
+  if (dimension == "row") {
+    # collapsing across rows, transpose
+    m <- t(m)
+  }
+  #check if only one replicate
+  if (ncol(m) == 1) {
+    #set weights to 1 and weighted modz == modz
+    weights <- 1
+    v <- m
+  return(list(
+    mods = v,
+    correlations = 1,
+    weights = as.character(paste(round(weights, digits = 3), collapse = ","))))
+  } else {
+    # ignore any columns containing NA values
+    na_idx <- matrixStats::colAnyNAs(m)
+    # make sure to enforce that the resulting object is 
+    # a matrix so that cor function will work
+    m <- as.matrix(m[, !na_idx])
+    # compute pairwise correlation matrix
+    # and threshold negative values to 0.01
+    landmark_ids <- g %>% filter(feature_space %in% c("landmark", "best inferred")) %>% rownames(.)
+    m_landmark <- m[rownames(m) %in% landmark_ids,]
+    
+    ##computing the correlation between replicates (columns), using all the genes as variables (rows).
+    corr <- threshold(stats::cor(m_landmark, method=method), 0.01, 1)
+    # set diagnoal to 0
+    diag(corr) <- 0
+    row_sums <- rowSums(corr)
+    # normalize sums to get weights
+    weights <- row_sums / sum(row_sums)
+    # multiply input matrix by weights
+    weighted_mat <- t(t(m) * weights)
+    # and now take the sum - sum of the replicates 
+    v <- rowSums(weighted_mat)
+      return(list(
+      mods = v,
+      ##upper.tri(corr) creates a logical matrix that identifies the upper triangle of the correlation matrix — that is, the elements above the diagonal
+      correlations = corr[upper.tri(corr)],
+      weights = as.character(paste(round(weights, digits = 3), collapse = ","))))
+  }
+
+    
+}
+
+#subset data function. subset based on desired signatures in database (cell lines, concentrations, timepoints etc)
+
+subset_siginfo <- function(cell_list = c("HT29"), treat_type = "trt_cp", treat_time = c(24)){
+  #read in signature info
+  siginfo <- fread("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/required_files/siginfo_beta.txt")
+ 
+  #filter siginfo for sigs of interest
+  col_meta_sub <- siginfo %>%
+  filter(cell_mfc_name %in% cell_list & pert_type == treat_type & pert_time %in% treat_time)
+  cells <- paste0(tolower(cell_list), collapse = "_")
+  
+  fwrite(col_meta_sub, paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", treat_time, "_", cells, "_siginfo_sub.csv"))
+
+  rm(siginfo)
+
+  signature_info <- cbind(col_meta_sub$distil_ids, str_split(col_meta_sub$distil_ids, "\\|", simplify = TRUE))
+}
+
+```
+
+```{r}
+
+cell_list<-c("NOMO1", "HL60", "K562", "AALE", "HME", "HPTEC", "HUVEC")
+get_modz <- function(cell_list = cell_list, treat_type="trt_cp", treat_time = c(336), ds_path = "~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/required_files/level4_beta_trt_cp_n1805898x12328.gctx"){
+  
+  siginfo <- fread("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/required_files/siginfo_beta.txt")
+ 
+  #filter siginfo for sigs of interest
+  col_meta_sub <- siginfo %>%
+  filter(cell_mfc_name %in% cell_list & pert_type == treat_type & pert_time %in% treat_time)
+  cells <- paste0(tolower(cell_list), collapse = "_")
+  
+  fwrite(col_meta_sub, paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", treat_type, "_", cells, "_siginfo_sub.csv"))
+
+  rm(siginfo)
+
+  signature_info <- cbind(col_meta_sub$distil_ids, str_split(col_meta_sub$distil_ids, "\\|", simplify = TRUE))
+  signature_info<-signature_info[1:5,]
+  
+  z <- NULL
+
+  for(i in 1:nrow(signature_info)
+      ){
+    cp_rep_ids <- c(signature_info[i,-1])
+    #remove empty values
+    cp_rep_ids <- cp_rep_ids[nzchar(cp_rep_ids)]
+    cp_mat <- mat(parse_gctx(paste0(ds_path), rid=geneinfo$gene_id, cid =cp_rep_ids))
+    y <- distil(cp_mat, g=geneinfo)
+    z <- rbind(z, y)
+    row.names(z)[i] <- signature_info[i,1]
+  }
+
+  #signature_info <- subset_siginfo(treatment = "trt_cp", cell_list = "NPC", pert_time = 24)
+
+
+  modz <- data.frame(z[,1] ) %>%
+  tibble::rownames_to_column(var = "gene_id")
+
+  #correlations <- as.data.frame(z[,"correlations"])
+
+  weights <- data.frame(wt =unlist(z[,"weights"])) %>%
+  tibble::rownames_to_column(var = "distil_ids")
+  
+  cells <- paste0(tolower(cell_list), collapse = "_")
+
+  fwrite(modz, paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", treat_type, "_", cells, "_modz.csv"))
+  #fwrite(correlations, paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", pert_type, "_replicate_corrs.csv"))
+  fwrite(weights, paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", treat_type, "_", cells, "_replicate_weights.csv"))
+}
+
+
+
+```
+#calculate p values
+```{r}
+cell_list<-c("NOMO1", "HL60", "K562", "AALE", "HME", "HPTEC", "HUVEC")
+get_pvals <- function(cell_list = cell_list, treat_type, ds_path){
+  
+#initialise df for gene p values to be appended to
+pvalue_df <- as.data.frame(geneinfo$gene_id) %>% rename(gene_id = "geneinfo$gene_id")
+cells <- paste0(tolower(cell_list), collapse = "_")
+wts_df <- fread(paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", treat_type, "_", cells, "_replicate_weights.csv"))
+col_meta_sub <- fread(paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", treat_type, "_", cells, "_siginfo_sub.csv"))
+# read only those columns from the GCTX file by using the 'cid' and `rid` parameters
+ #cid=cp_rep_ids,
+signature_info <- cbind(col_meta_sub$distil_ids, str_split(col_meta_sub$distil_ids, "\\|", simplify = TRUE))
+
+  for(i in 1:nrow(signature_info)){
+    weights <- wts_df %>% filter(distil_ids == signature_info[i,1]) %>% dplyr::select(wt)
+    #filter weights df for duplicates
+    weights <- weights[!duplicated(weights),]
+  if (weights == 1) {
+    print("no replicates provided")
+  }
+  else if( weights != "NaN"){
+    cp_rep_ids <- c(signature_info[i,-1])
+    cp_mat <- mat(parse_gctx(paste0(ds_path), rid=geneinfo$gene_id, cid =cp_rep_ids))
+    #do test for pvalues
+    ## Fits a linear model per gene (row) across the replicates (columns) - Uses the weights to give more importance to replicates that are more consistent or higher quality 
+    fit <- lmFit(cp_mat, weights = as.numeric((str_split_1(as.character(weights$wt), ","))))
+    ##Adds empirical Bayes variance moderation to linear model output
+    fit <- eBayes(fit)
+    sig_id <- col_meta_sub %>% filter(distil_ids == signature_info[i,1]) %>% dplyr::select(sig_id) 
+    if(nrow(sig_id) > 1){
+      ##In the LINCS L1000 and CMap datasets, -666 is commonly used to mean: ❌ Missing, not available, or invalid data
+      sig_id <- sig_id %>% filter(!str_detect(sig_id, ":-666")) %>% pull()
+    } else{
+      sig_id <- sig_id %>% pull()
+    }
+    fit_df <-  fit$p.value %>% 
+      as.data.frame() %>%
+      tibble::rownames_to_column(var="gene_id")  %>%
+      rename(., !!sig_id := x1)
+
+    #add results to df <- <- <- 
+    pvalue_df <- left_join(pvalue_df, fit_df)
+  }else{
+    print("no weights provided")
+  }
+  
+  }
+  
+  fwrite(pvalue_df, paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", treat_type, "_", cells, "_replicate_pvalues.csv"))
+}
+
+
+```
+
+```{r}
+
+ # row metadata file
+  geneinfo <- fread("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/required_files/geneinfo_beta.txt")
+  # convert gene_id to character class as row metadata id (gene_id) is character and otherwise they wont merge when adding row metadata to gctx
+  geneinfo$gene_id <- as.character(geneinfo$gene_id)
+
+  #filter genes for landmark and best inferred
+  geneinfo <- geneinfo %>% filter(feature_space %in% c("landmark", "best inferred"))
+  
+  
+# rows=genes and cols=perturbations
+
+
+```
+
+#calculate replicate weights using spearman corr
+```{r}
+
+cell_list<-c("NOMO1", "HL60", "K562", "AALE", "HME", "HPTEC", "HUVEC")
+
+get_modz(cell_list = cell_list, treat_type = "trt_cp", treat_time = c(24), ds_path = "~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/required_files/level4_beta_trt_cp_n1805898x12328.gctx")
+get_pvals(cell_list = cell_list, treat_type = "trt_cp", ds_path = "~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/required_files/level4_beta_trt_cp_n1805898x12328.gctx")
+
+
+```

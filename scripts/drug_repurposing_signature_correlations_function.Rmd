@@ -1,0 +1,211 @@
+---
+title: "explore_cns_cp"
+output: pdf_document
+date: "2022-12-15"
+---
+
+```{r}
+#library(tidyverse)
+library(data.table)
+#library(cmapR)
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+
+```
+
+```{r}
+theme_set(theme_classic()+ theme(panel.border = element_rect(colour = "black", fill=NA),
+                                 plot.title = element_text(hjust = 0.5),
+                                 panel.background = element_rect(fill='transparent'),
+                                 plot.background = element_rect(fill='transparent', color=NA)))
+
+```
+
+```{r}
+
+#function to plot results
+
+plot_top_20 <- function(corrs, line, signature_name, df){
+  
+  top_20 <-  corrs %>%
+  slice_head(n=20)
+  
+  p <- ggplot(top_20)+
+  geom_point(aes(x =  correlation, y = reorder(cmap_name, correlation, decreasing = TRUE)))+
+  scale_x_reverse()+
+  ylab("Compound name")+
+  xlab("Weighted Pearson Correlation")
+  
+  ggsave(paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", signature_name, "/",line, "_top_20_hits.pdf"), p)
+  
+  for(i in top_20$sig_id){
+    x <- corrs %>% filter(sig_id == i) %>% select(cmap_name)
+    annotation <- data.frame(xpos= Inf, ypos = Inf, annotation = paste0("Weighted Pearson Correlation: ", round(corrs %>% filter(sig_id == i) %>% select(correlation),2)), hjustvar = 1.2, vjustvar = 2)
+    #df <- df %>% filter(!!sym(i) >= 1 | !!sym(i) <= -1)
+    p2 <- ggplot(df, aes(x=!!sym("log2FoldChange"), y= !!sym(i)))+
+      ggtitle(paste(line,x))+
+      ylab(paste0(x, " Log2 FC")) +
+      xlab(paste0(signature_name, " signature Log2 FC")) +
+      geom_point( alpha = 0.5)+
+      geom_smooth(method = "lm", se = FALSE)+
+      geom_label_repel(label = df$gene_symbol)+
+      geom_hline(yintercept=0)+
+      geom_vline(xintercept=0)+
+      geom_text(data = annotation, aes(x = xpos, y = ypos, hjust = hjustvar, vjust = vjustvar, label = annotation))
+
+   ggsave(paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", signature_name, "/gene_plots/", line, "_",x, ".pdf"), p2)
+
+  }
+  
+}
+
+#function to correlate the drug signatures with the disease signature
+correlate_signatures <- function(signature_name, file_path, pval_thresh, fc_thresh, n_slice){
+  #path to all neuronal compound modz and p values
+# rows=genes and cols=lines and treatments
+modz <- fread("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/trt_cp_ln229_u251mg_yh13_gi1_modz.csv")
+pvals <- fread("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/trt_cp_ln229_u251mg_yh13_gi1_replicate_pvalues.csv")
+#signature metadata
+siginfo <- fread("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/trt_cp_ln229_u251mg_yh13_gi1_siginfo_sub.csv")
+# row metadata file
+row_meta <- fread("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/required_files/geneinfo_beta.txt") 
+
+#load disease signature 
+signature <- fread(file_path, select = c("gene_name", "logFC", "p_adj")) 
+colnames(signature)<-c("gene_symbol", "log2FoldChange", "padj")
+
+print("data loaded")
+#add gene ids and ensembl ids to modz
+signature <- left_join(row_meta[,c("gene_id", "gene_symbol", "ensembl_id")], signature, by = c("gene_symbol")) %>%
+  na.omit()
+
+#replace modz col names with sig_ids rather than distil_ids
+#replace : and | in distil ids with . to match modz col names
+siginfo$distil_ids <- gsub("[:||]", ".", siginfo$distil_ids )
+#get a list of the sig_ids
+sig_ids <- siginfo %>% filter(distil_ids %in% colnames(modz[,-1])) %>%
+  dplyr::select(distil_ids, sig_id)
+
+
+#check ids are in the same order
+if(sum(sig_ids$distil_ids != colnames(modz[,-1])) != 0){
+  stop("sig_ids do not match column names of modz")
+}
+#replace the modz col names
+colnames(modz) <- c("gene_id", sig_ids$sig_id)
+
+# filter disease signature genes based on FC and p val
+signature <- signature %>%
+  filter(padj < pval_thresh, log2FoldChange > fc_thresh |log2FoldChange < (- fc_thresh))
+
+modz <- modz %>% 
+  filter(gene_id %in% signature$gene_id) 
+
+signature <- signature %>%
+  filter(gene_id %in% modz$gene_id) %>%
+  # select top X genes from signature based on p val
+  slice_min(order_by = padj, n = n_slice) 
+
+modz <- modz %>% 
+  filter(gene_id %in% signature$gene_id) %>%
+  # reorder rows so they match the signature
+  arrange(match(gene_id, signature$gene_id))
+
+pvals <- pvals %>%
+  filter(gene_id %in% signature$gene_id) %>%
+  # reorder rows so they match the signature
+  arrange(match(gene_id, signature$gene_id))
+
+
+if(sum(modz$gene_id != signature$gene_id) != 0){
+    stop("modz genes do not match signature genes")
+}
+if(sum(pvals$gene_id != signature$gene_id) != 0){
+    stop("pval genes do not match signature genes")
+  }
+
+dir.create(paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", signature_name))
+fwrite(signature, paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", signature_name, "/signature_used.csv"))
+
+#create pairwise weights
+wts <-  cbind(gene_id = pvals$gene_id,-log10(signature$padj) -log10(pvals[,-1]))
+
+#temporarily filter MODZ cols to match pvals cols
+keep_cols <- intersect(colnames(modz), colnames(wts))
+#remove one gene that has infinite values
+keep_rows <- !is.infinite(wts$gene_id)
+
+wts <- wts %>% filter(keep_rows)
+modz <- modz %>%
+  dplyr::select(all_of(keep_cols)) %>%
+  filter(keep_rows)
+
+signature <- signature %>% filter(keep_rows)
+
+
+#option to have different weights per comparison?:
+complete_df <- left_join(signature, modz)
+vars <- data.frame(v1="log2FoldChange", v2=names(modz[,-1]),stringsAsFactors = FALSE)
+
+wt_cor_df <- NULL
+
+print("calculating correlations")
+for(i in 1:nrow(vars)){
+  wt_cor <- data.frame(sig_id=vars[i,2], correlation = boot::corr(complete_df %>% dplyr::select(as.character(vars[i,])), w = wts %>% dplyr::select(as.character(vars[i,2])))) 
+  wt_cor_df <- rbind(wt_cor_df, wt_cor)
+}
+
+wt_cor_df <- left_join(wt_cor_df, siginfo)
+
+corrs <- wt_cor_df %>%
+  filter(cell_iname %in% c("LN229", "U251MG", "YH13", "GI1")) %>%
+  arrange(correlation, descending = FALSE)
+
+fwrite(corrs, paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", signature_name, "/", "ln229_u251mg_yh13_gi1_corrs.csv"))
+
+plot_top_20(corrs = corrs_npc, line = "corrs_ln229_u251mg_yh13_gi1", signature_name = signature_name, df = complete_df)
+
+}
+
+```
+
+```{r}
+# run function across all disease signatures of interest
+
+correlate_signatures(signature_name = "pu1_mathys_sun_eqtl",file_path =  "~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/sc_hmagma_genes/pu1_genes_sc_info_mathys_sun_eqtl_hmagma_genes.csv", pval_thresh = 0.05, fc_thresh = 0, n_slice =250)
+
+```
+
+```{r}
+corrs<-corrs
+line<-c("corrs_nomo1_hl60_k562", "corrs_ln229_u251mg_yh13_gi1", "corrs_aale_hme_hptec", "corrs_huvec")
+df<-complete_df
+
+  top_20 <-  corrs %>%
+  slice_head(n=20)
+  
+
+top_20_summary <- top_20 %>%
+  group_by(cmap_name) %>%
+  summarise(mean_correlation = mean(correlation, na.rm = TRUE))
+
+
+  library(ggplot2)
+
+ggplot(top_20_summary, aes(x = reorder(cmap_name, mean_correlation, decreasing = TRUE), y = mean_correlation)) +
+  geom_segment(aes(xend = cmap_name, yend = mean_correlation), color = "grey") +  # set base of stick to -0.9
+  geom_point(size = 3, color = "#BC3934") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    x = "",
+    y = "Weighted Pearson Correlation",
+    title = "Lollipop Plot: Drug Reversal Correlation"
+  ) 
+
+  
+  ggsave(paste0("~/../projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/drug_discovery/output/", signature_name, "/", "HPTEC_HME_AALE_top_20_lollipop_plot.pdf"), last_plot())
+  
+```
+
