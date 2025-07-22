@@ -35,7 +35,7 @@ done
 ## Step 3: Running ldsc - disease enrichment  analysis using 1) GWAS summary statistics formatted using munge_sumstats.py script; 2) Baseline model LD scores, standard regression weights, and allele frequencies which were based on the 1000 Genomes Phase 3 European population data; and 3)ld scores for our functional annotations
 
 DISEASE="/rds/general/user/aa19618/projects/epinott/live/user_analysed_data/Aydan/vasculature_disease_epi/gwas_studies/ldsc_files/sumstats_ldsc"
-export disease=("AD_Jansen2019" "AD_Kunkle2019" "PD_Nalls2019_proxy" "MS_Andlauer2016" "ALS_Rheenen2021" "SCZ_Trubetskoy2022" "CAD_Aragam2022" "AF_Nielsen2018" "DBP_Evangelou2018" "SBP_Evangelou2018" "Stroke_Malik2018" "Stroke_Mishra2022" "Longevity_Deelan2019_90th" "SVD_Sargurupremraj2022" "PVS_Duperron2023" "Covid_Castineira2023")
+export disease=("AD_Jansen2019" "AD_Kunkle2019" "PD_GP22025" "MS_Andlauer2016" "ALS_Rheenen2021" "SCZ_Trubetskoy2022" "CAD_Aragam2022" "AF_Nielsen2018" "DBP_Evangelou2018" "SBP_Evangelou2018" StrokeAIS_Malik2018 "Longevity_Deelan2019_90th" "SVD_Sargurupremraj2022" "PVS_Duperron2023" "Covid_Castineira2023")
 
 ID=ADvas_AAA_20240422_ac_hg19
 
